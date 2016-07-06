@@ -3,9 +3,7 @@
  */
 package org.mybatis.cache.redis;
 
-import java.io.IOException;
 import java.io.InputStream;
-import java.util.Properties;
 import java.util.Set;
 
 import redis.clients.jedis.Jedis;
@@ -23,7 +21,13 @@ public class RedisCacheFactory {
 
     private JedisPool jedisPool;
 
-    public RedisCacheFactory() {
+    private static RedisCacheFactory instance = new RedisCacheFactory();
+
+    public static RedisCacheFactory instance() {
+        return instance;
+    }
+
+    private RedisCacheFactory() {
         // 目前只针对单机版redis
         initJedisPool();
     }
@@ -87,11 +91,8 @@ public class RedisCacheFactory {
         try {
             jedis = jedisPool.getResource();
             // 缓存值
-            return 
-                    jedis.get(SerializeUtil.serialize(key))==null?null:  
-                    SerializeUtil.deserialize(
-                    jedis.get(SerializeUtil.serialize(key))
-                    );
+            return jedis.get(SerializeUtil.serialize(key)) == null ? null : SerializeUtil.deserialize(jedis
+                    .get(SerializeUtil.serialize(key)));
 
         } finally {
             if (jedis != null) {
