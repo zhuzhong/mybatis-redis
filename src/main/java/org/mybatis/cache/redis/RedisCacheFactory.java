@@ -6,7 +6,6 @@ package org.mybatis.cache.redis;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -34,7 +33,7 @@ import com.alibaba.druid.util.JdbcUtils;
  * @autthor Administrator
  *
  */
-public class RedisCacheFactory {
+public class RedisCacheFactory implements RedisCacheFactoryMBean{
 
     private Configs config;
     private JedisPool jedisPool;
@@ -180,6 +179,7 @@ public class RedisCacheFactory {
         }
     }
 
+    @Override
     public void clear(String id) {
         Jedis jedis = null;
         try {
@@ -202,6 +202,7 @@ public class RedisCacheFactory {
                     for (byte[] k : tableKeys) {
                         jedis.del(k); // 删除 与这个相关的所有关联查询
                     }
+                    jedis.del(serializer.serialize(tableKey(name)));
                 }
                 
             }
