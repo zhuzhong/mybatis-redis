@@ -23,7 +23,7 @@ tablename -　与该table相关的所有key集合
  (此步有可能缓存的清理过多，请慎重选择，开启该功能是配置 use.grained.cache=true,默认是关闭即use.grained.cache=false)
 
  
- ###配置文件加载
+ ##配置文件加载
  
  组件启动默认会先加载jar包的default-rediscache.properties,
  而后获取系统参数redis.config.path对应的配置文件,
