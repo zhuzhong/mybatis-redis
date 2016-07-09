@@ -3,11 +3,8 @@
  */
 package org.mybatis.cache.redis;
 
-import java.io.IOException;
-import java.io.InputStream;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Properties;
 import java.util.Set;
 
 import org.apache.ibatis.cache.CacheKey;
@@ -16,13 +13,10 @@ import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
 
 import com.alibaba.druid.sql.ast.SQLStatement;
-import com.alibaba.druid.sql.dialect.mysql.visitor.MySqlSchemaStatVisitor;
-import com.alibaba.druid.sql.dialect.oracle.visitor.OracleSchemaStatVisitor;
 import com.alibaba.druid.sql.parser.SQLParserUtils;
 import com.alibaba.druid.sql.parser.SQLStatementParser;
 import com.alibaba.druid.sql.visitor.SchemaStatVisitor;
 import com.alibaba.druid.stat.TableStat;
-import com.alibaba.druid.util.JdbcUtils;
 
 /**
  * 实现原理：<br>
@@ -33,11 +27,12 @@ import com.alibaba.druid.util.JdbcUtils;
  * @autthor Administrator
  *
  */
-public class RedisCacheFactory implements RedisCacheFactoryMBean{
+public class RedisCacheFactory implements RedisCacheFactoryMBean {
 
     private Configs config;
     private JedisPool jedisPool;
     private ObjectSerializer serializer;
+    private SchemaStatVisitor schemaStatVisitor;
     private static RedisCacheFactory instance = new RedisCacheFactory();
 
     public static RedisCacheFactory instance() {
@@ -46,39 +41,18 @@ public class RedisCacheFactory implements RedisCacheFactoryMBean{
 
     private RedisCacheFactory() {
         // 目前只针对单机版redis
-        initJedisPool();
-    }
-
-    private void initJedisPool() {
-        Properties p = new Properties();
-        // 读取关于redis的配置文件，然后实例化redis
-        InputStream input = getClass().getClassLoader().getResourceAsStream(Configs.default_config);
-        loadProperties(p, input);
-        if (System.getProperty(Configs.system_path) != null) {
-            input = getClass().getResourceAsStream(System.getProperty(Configs.system_path));
-            loadProperties(p, input);
-        }
-        if (getClass().getClassLoader().getResourceAsStream(Configs.user_config) != null) {
-            input = getClass().getClassLoader().getResourceAsStream(Configs.user_config);
-            loadProperties(p, input);
-        }
-
-        /*
-         * if (input == null) { throw new RuntimeException("redis配置文件不存在"); }
-         */
-        config = new Configs(p);
+        initConfigs();
         serializer = config.getSerialize();
+        schemaStatVisitor=config.getSchemaStatVisitor();
         jedisPool = new JedisPool(config.host(), config.port());
     }
 
-    private void loadProperties(Properties p, InputStream in) {
-        if (in != null) {
-            try {
-                p.load(in);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-        }
+    private void initConfigs() {
+        /*
+         * if (input == null) { throw new RuntimeException("redis配置文件不存在"); }
+         */
+        config = new Configs();
+
     }
 
     private String idKey(String id) {
@@ -86,7 +60,7 @@ public class RedisCacheFactory implements RedisCacheFactoryMBean{
     }
 
     private String tableKey(String tableName) {
-        return "MYBATIS-REDIS-TABLE-" + tableName;
+        return "MYBATIS-REDIS-TABLE-" + tableName.toUpperCase();
     }
 
     public int getSizeById(String id) {
@@ -136,8 +110,13 @@ public class RedisCacheFactory implements RedisCacheFactoryMBean{
         String sql = strs[5];
         SQLStatementParser parser = SQLParserUtils.createSQLStatementParser(sql, config.dbtype());
         SQLStatement statement = parser.parseStatement();
-        SchemaStatVisitor statVisitor = config.dbtype().equalsIgnoreCase(JdbcUtils.MYSQL) ? new MySqlSchemaStatVisitor()
-                : new OracleSchemaStatVisitor();
+        SchemaStatVisitor statVisitor;/*
+                                       * =
+                                       * config.dbtype().equalsIgnoreCase(JdbcUtils
+                                       * .MYSQL) ? new MySqlSchemaStatVisitor()
+                                       * : new OracleSchemaStatVisitor();
+                                       */
+        statVisitor = schemaStatVisitor;
         statement.accept(statVisitor);
 
         Map<TableStat.Name, TableStat> tables = statVisitor.getTables();
@@ -190,13 +169,13 @@ public class RedisCacheFactory implements RedisCacheFactoryMBean{
             }
 
             if (config.useGrainedCahe()) {
-                Set<String> tableNames=new HashSet<String>();
+                Set<String> tableNames = new HashSet<String>();
                 for (byte[] k : keys) {
                     Object key = serializer.deserialize(k);
                     Set<String> tables = getTables(key);
-                    tableNames.addAll(tables); //找到所有表
+                    tableNames.addAll(tables); // 找到所有表
                 }
-                
+
                 for (String name : tableNames) {
                     Set<byte[]> tableKeys = jedis.smembers(serializer.serialize(tableKey(name)));
                     for (byte[] k : tableKeys) {
@@ -204,11 +183,28 @@ public class RedisCacheFactory implements RedisCacheFactoryMBean{
                     }
                     jedis.del(serializer.serialize(tableKey(name)));
                 }
-                
+
             }
 
             // 删除key
             jedis.del(serializer.serialize(idKey(id)));
+        } finally {
+            if (jedis != null) {
+                jedis.close();
+            }
+        }
+    }
+
+    // 根据表名清理缓存
+    public void clearByTableName(String name) {
+        Jedis jedis = null;
+        try {
+            jedis = jedisPool.getResource();
+            Set<byte[]> tableKeys = jedis.smembers(serializer.serialize(tableKey(name)));
+            for (byte[] k : tableKeys) {
+                jedis.del(k);
+            }
+            jedis.del(serializer.serialize(tableKey(name)));
         } finally {
             if (jedis != null) {
                 jedis.close();

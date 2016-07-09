@@ -9,5 +9,6 @@ package org.mybatis.cache.redis;
  */
 public interface RedisCacheFactoryMBean {
 
-    public void clear(String id);
+    public void clear(String id); //根据mapperid清理缓存
+    public void clearByTableName(String tablename);//根据表名清量缓存
 }
